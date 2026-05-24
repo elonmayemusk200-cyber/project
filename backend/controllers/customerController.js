@@ -388,23 +388,233 @@ exports.markNotificationRead = async (req, res) => {
   }
 };
 
+const emitSupportTicketUpdate = (ticketId, payload) => {
+  if (global.supportIO) {
+    global.supportIO.to(`support-ticket-${ticketId}`).emit('support:ticket_updated', {
+      ticketId,
+      ...payload,
+    });
+  }
+};
+
+const emitSupportTicketCreated = (ticketId, payload) => {
+  if (global.supportIO) {
+    global.supportIO.emit('support:ticket_updated', {
+      ticketId,
+      ...payload,
+    });
+  }
+};
+
+const emitSupportMessageReceived = (ticketId, payload) => {
+  if (global.supportIO) {
+    global.supportIO.to(`support-ticket-${ticketId}`).emit('support:message_received', {
+      ticketId,
+      ...payload,
+    });
+  }
+};
+
+const loadCustomerSupportTicket = async (ticketId, customerId) => {
+  const [tickets] = await pool.execute(
+    `SELECT
+      t.*,
+      s.tracking_id,
+      s.status AS shipment_status,
+      a.name AS assigned_to_name
+    FROM customer_support_tickets t
+    LEFT JOIN shipments s ON t.shipment_id = s.id
+    LEFT JOIN admins a ON t.assigned_to = a.id
+    WHERE t.id = ? AND t.customer_id = ?`,
+    [ticketId, customerId]
+  );
+
+  return tickets[0] || null;
+};
+
+const loadCustomerSupportMessage = async (messageId) => {
+  const [messages] = await pool.execute(
+    `SELECT
+      m.id,
+      m.ticket_id,
+      m.sender_type,
+      m.sender_id,
+      m.message,
+      m.created_at,
+      m.is_read,
+      COALESCE(a.name, c.name, 'Customer') AS sender_name
+    FROM support_ticket_messages m
+    LEFT JOIN admins a ON m.sender_type = 'agent' AND m.sender_id = a.id
+    LEFT JOIN customers c ON m.sender_type = 'customer' AND m.sender_id = c.id
+    WHERE m.id = ?`,
+    [messageId]
+  );
+
+  return messages[0] || null;
+};
+
+exports.getCustomerSupportTickets = async (req, res) => {
+  try {
+    const [tickets] = await pool.execute(
+      `SELECT
+        t.*,
+        s.tracking_id,
+        s.status AS shipment_status,
+        a.name AS assigned_to_name
+      FROM customer_support_tickets t
+      LEFT JOIN shipments s ON t.shipment_id = s.id
+      LEFT JOIN admins a ON t.assigned_to = a.id
+      WHERE t.customer_id = ?
+      ORDER BY t.updated_at DESC`,
+      [req.customer.id]
+    );
+
+    res.json({ success: true, tickets });
+  } catch (err) {
+    console.error('Get customer support tickets error:', err);
+    res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+exports.getCustomerSupportTicketMessages = async (req, res) => {
+  try {
+    const ticket = await loadCustomerSupportTicket(req.params.id, req.customer.id);
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: 'Support ticket not found.' });
+    }
+
+    const [messages] = await pool.execute(
+      `SELECT
+        m.id,
+        m.ticket_id,
+        m.sender_type,
+        m.sender_id,
+        m.message,
+        m.created_at,
+        m.is_read,
+        COALESCE(a.name, c.name, 'Customer') AS sender_name
+      FROM support_ticket_messages m
+      LEFT JOIN admins a ON m.sender_type = 'agent' AND m.sender_id = a.id
+      LEFT JOIN customers c ON m.sender_type = 'customer' AND m.sender_id = c.id
+      WHERE m.ticket_id = ?
+      ORDER BY m.created_at ASC`,
+      [req.params.id]
+    );
+
+    res.json({ success: true, ticket, messages });
+  } catch (err) {
+    console.error('Get customer support messages error:', err);
+    res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+exports.sendCustomerSupportMessage = async (req, res) => {
+  try {
+    const { message } = req.body;
+    const trimmedMessage = String(message || '').trim();
+
+    if (!trimmedMessage) {
+      return res.status(400).json({ success: false, message: 'Message is required.' });
+    }
+
+    const ticket = await loadCustomerSupportTicket(req.params.id, req.customer.id);
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: 'Support ticket not found.' });
+    }
+
+    if (ticket.status === 'closed') {
+      return res.status(400).json({ success: false, message: 'This support ticket is already closed.' });
+    }
+
+    const [insertResult] = await pool.execute(
+      'INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)',
+      [req.params.id, 'customer', req.customer.id, trimmedMessage]
+    );
+
+    await pool.execute(
+      'UPDATE customer_support_tickets SET status = ?, updated_at = NOW(), last_reply_at = NOW() WHERE id = ? AND customer_id = ?',
+      ['open', req.params.id, req.customer.id]
+    );
+
+    const newMessage = await loadCustomerSupportMessage(insertResult.insertId);
+
+    emitSupportMessageReceived(Number(req.params.id), {
+      message: newMessage,
+      ticket: { id: ticket.id, status: 'open' },
+    });
+
+    emitSupportTicketUpdate(Number(req.params.id), {
+      ticket: { id: ticket.id, status: 'open' },
+      event: 'customer_reply_sent',
+    });
+
+    res.json({ success: true, message: newMessage, ticket: { id: ticket.id, status: 'open' } });
+  } catch (err) {
+    console.error('Customer support reply error:', err);
+    res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
 exports.contactSupport = async (req, res) => {
   try {
     const { subject, message, shipment_id } = req.body;
-    if (!message) return res.status(400).json({ success: false, message: 'Message is required.' });
+    const trimmedMessage = String(message || '').trim();
 
-    await pool.execute(
-      `INSERT INTO customer_support_tickets (customer_id, shipment_id, subject, message)
-       VALUES (?, ?, ?, ?)`,
-      [req.customer.id, shipment_id || null, subject || 'Customer support request', message]
-    );
+    if (!trimmedMessage) {
+      return res.status(400).json({ success: false, message: 'Message is required.' });
+    }
 
-    await pool.execute(
-      'INSERT INTO contact_messages (name, email, phone, subject, message) VALUES (?,?,?,?,?)',
-      [req.customer.name, req.customer.email, req.customer.phone || null, subject || 'Customer support request', message]
-    );
+    const connection = await pool.getConnection();
 
-    res.status(201).json({ success: true, message: 'Support request sent.' });
+    try {
+      await connection.beginTransaction();
+
+      const [ticketResult] = await connection.execute(
+        `INSERT INTO customer_support_tickets
+          (customer_id, customer_name, customer_email, customer_phone, shipment_id, subject, message, channel, issue_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          req.customer.id,
+          req.customer.name,
+          req.customer.email,
+          req.customer.phone || null,
+          shipment_id || null,
+          subject || 'Customer support request',
+          trimmedMessage,
+          'web',
+          'general_inquiry'
+        ]
+      );
+
+      const ticketId = ticketResult.insertId;
+
+      const [messageResult] = await connection.execute(
+        'INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)',
+        [ticketId, 'customer', req.customer.id, trimmedMessage]
+      );
+
+      await connection.execute(
+        'INSERT INTO contact_messages (name, email, phone, subject, message) VALUES (?,?,?,?,?)',
+        [req.customer.name, req.customer.email, req.customer.phone || null, subject || 'Customer support request', trimmedMessage]
+      );
+
+      await connection.commit();
+
+      const ticket = await loadCustomerSupportTicket(ticketId, req.customer.id);
+      const newMessage = await loadCustomerSupportMessage(messageResult.insertId);
+
+      emitSupportTicketCreated(ticketId, {
+        ticket,
+        event: 'created',
+      });
+
+      res.status(201).json({ success: true, message: 'Support request sent.', ticket });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   } catch (err) {
     console.error('Customer support error:', err);
     res.status(500).json({ success: false, message: 'Server error.' });

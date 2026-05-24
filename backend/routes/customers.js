@@ -27,6 +27,9 @@ router.get('/shipments/:id', ctrl.getShipment);
 router.post('/shipments/:shipmentId/documents', documentUpload.single('file'), ctrl.uploadDocument);
 router.get('/notifications', ctrl.getNotifications);
 router.put('/notifications/:id/read', ctrl.markNotificationRead);
+router.get('/support/tickets', ctrl.getCustomerSupportTickets);
+router.get('/support/tickets/:id/messages', ctrl.getCustomerSupportTicketMessages);
+router.post('/support/tickets/:id/messages', ctrl.sendCustomerSupportMessage);
 router.post('/support', customerSupportValidation, ctrl.contactSupport);
 
 module.exports = router;

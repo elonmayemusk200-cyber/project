@@ -1,0 +1,129 @@
+╔════════════════════════════════════════════════════════════════════╗
+║         MIDWEST SHIPMENT - QUICK REFERENCE CARD                   ║
+╚════════════════════════════════════════════════════════════════════╝
+
+📍 STARTUP CHECKLIST
+─────────────────────────────────────────────────────────────────────
+1. Start MySQL:           net start MySQL80
+2. Initialize Database:   INIT_DATABASE.bat
+3. Install Dependencies:  npm run setup
+4. Start Everything:      npm run dev
+
+🌐 ACCESS POINTS
+─────────────────────────────────────────────────────────────────────
+Frontend:          http://localhost:3000
+Backend API:       http://localhost:5000
+API Health:        http://localhost:5000/api/health
+Admin Login:       http://localhost:3000/admin
+
+🔐 DEFAULT CREDENTIALS
+─────────────────────────────────────────────────────────────────────
+Email:    admin@midwestshipment.com
+Password: Admin@123456
+⚠️  Change immediately in production!
+
+📦 AVAILABLE COMMANDS
+─────────────────────────────────────────────────────────────────────
+npm run dev        Start both frontend and backend
+npm run backend    Start only backend API
+npm run frontend   Start only frontend
+npm run setup      Install all dependencies
+npm run verify     Check system health
+
+📂 KEY FILES & DIRECTORIES
+─────────────────────────────────────────────────────────────────────
+README.md                Complete documentation
+SETUP_GUIDE.md          Detailed setup instructions
+INTEGRATION_COMPLETE.md Status report
+START_ALL.bat          One-click startup script
+INIT_DATABASE.bat      Database initialization
+backend/.env           Backend configuration
+backend/config/        Database config & schema
+
+🗄️ DATABASE TABLES (11+)
+─────────────────────────────────────────────────────────────────────
+Users:
+  - admins
+  - customers
+  - customer_email_verifications
+  - customer_password_resets
+
+Shipments:
+  - shipments
+  - tracking_events
+  - shipment_activity_logs
+  - shipment_media
+
+Features:
+  - customer_notifications
+  - customer_support_tickets
+  - customer_delivery_documents
+  - contact_messages
+
+🔗 FRONTEND → BACKEND COMMUNICATION
+─────────────────────────────────────────────────────────────────────
+API Base URL:      http://localhost:5000/api
+Auth Method:       JWT Token (via cookies)
+Content-Type:      application/json
+CORS Enabled:      Yes (for localhost:3000)
+
+⚡ TROUBLESHOOTING
+─────────────────────────────────────────────────────────────────────
+Port in use?        netstat -ano | findstr :PORT
+                    taskkill /PID <PID> /F
+
+MySQL not running?  net start MySQL80
+                    sc query | find "MySQL"
+
+Database error?     INIT_DATABASE.bat
+                    mysql -u root -h localhost < backend\config\schema.sql
+
+Deps failing?       npm cache clean --force
+                    npm install
+
+API not responding? npm run backend (check logs)
+                    npm run verify
+
+🚀 PROJECT STRUCTURE
+─────────────────────────────────────────────────────────────────────
+midwest-shipment/
+  ├── backend/          Express API (port 5000)
+  │   ├── config/       Database setup
+  │   ├── routes/       API endpoints
+  │   ├── controllers/  Business logic
+  │   └── .env          Configuration
+  ├── frontend/         Next.js App (port 3000)
+  │   ├── src/
+  │   │   ├── app/      Pages/routes
+  │   │   ├── components/ React components
+  │   │   └── lib/      API client
+  │   └── package.json
+  ├── package.json      Root scripts
+  ├── README.md         Full documentation
+  └── SETUP_GUIDE.md    Step-by-step guide
+
+✅ INTEGRATION STATUS
+─────────────────────────────────────────────────────────────────────
+✓ Frontend configured (Next.js)
+✓ Backend configured (Express)
+✓ Database schema prepared (MySQL)
+✓ API client setup (Axios + JWT)
+✓ CORS enabled
+✓ Authentication system ready
+✓ Helper scripts created
+✓ Documentation complete
+
+🎯 NEXT STEPS
+─────────────────────────────────────────────────────────────────────
+1. Open Command Prompt as Administrator
+2. Run: net start MySQL80
+3. Run: INIT_DATABASE.bat
+4. Run: npm run setup
+5. Run: npm run dev
+6. Open: http://localhost:3000
+7. Login with admin credentials
+
+═══════════════════════════════════════════════════════════════════════
+
+Need help? Check README.md or SETUP_GUIDE.md for detailed information.
+System ready for development! 🎉
